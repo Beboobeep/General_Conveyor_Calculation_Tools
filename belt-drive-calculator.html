@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Belt Drive Calculator</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin:0; padding:0; font-family:'IBM Plex Sans','Segoe UI',system-ui,sans-serif; background:#000; color:#f0f0f0;
+      --bg:#000000; --surface:#111111; --surface2:#1a1a1a; --border:#333333; --text:#f0f0f0; --muted:#999999;
+      --accent:#22c55e; --accent2:#4ade80; --danger:#ef4444; --success:#22c55e; --highlight:#86efac; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel">
+    const { useState, useMemo } = React;
+
+    const inputStyle = {
+      width:'100%', padding:'8px 10px', borderRadius:5, border:'1px solid var(--border)',
+      background:'var(--surface2)', color:'var(--text)', fontSize:14,
+      fontFamily:"'IBM Plex Mono', monospace", boxSizing:'border-box',
+    };
+    const labelStyle = {
+      fontSize:11, fontWeight:600, textTransform:'uppercase', letterSpacing:1,
+      color:'var(--muted)', display:'block', marginBottom:8,
+    };
+    const cardStyle = {
+      background:'var(--surface)', borderRadius:8, padding:16, border:'1px solid var(--border)',
+    };
+
+    function OutputStat({ label, value, unit, accent }) {
+      return (
+        <div style={{ background:'var(--surface2)', borderRadius:6, padding:'12px 14px', border:'1px solid var(--border)' }}>
+          <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:0.5, marginBottom:4 }}>{label}</div>
+          <div style={{ fontSize:20, fontWeight:700, fontFamily:"'IBM Plex Mono', monospace", color: accent ? 'var(--accent)' : 'var(--text)' }}>
+            {value}<span style={{ fontSize:12, fontWeight:500, color:'var(--muted)', marginLeft:4 }}>{unit}</span>
+          </div>
+        </div>
+      );
+    }
+
+    function InputField({ label, value, onChange, step, min, unit, note }) {
+      return (
+        <div style={cardStyle}>
+          <label style={labelStyle}>{label}{unit ? ` (${unit})` : ''}</label>
+          <input type="number" step={step || '0.01'} min={min || '0'} value={value}
+            onChange={e => onChange(parseFloat(e.target.value) || 0)} style={inputStyle} />
+          {note && <div style={{ fontSize:10, color:'var(--muted)', marginTop:4 }}>{note}</div>}
+        </div>
+      );
+    }
+
+    function App() {
+      const [beltArea, setBeltArea] = useState(100);
+      const [beltWeightPerSqIn, setBeltWeightPerSqIn] = useState(0.01);
+      const [bedFriction, setBedFriction] = useState(0.3);
+      const [pulleyFriction, setPulleyFriction] = useState(0.35);
+      const [wrapAngleDeg, setWrapAngleDeg] = useState(180);
+      const [maxLoad, setMaxLoad] = useState(50);
+      const [conveyorSpeed, setConveyorSpeed] = useState(100);
+      const [pulleyRadius, setPulleyRadius] = useState(1.5);
+
+      const results = useMemo(() => {
+        const wrapAngleRad = wrapAngleDeg * Math.PI / 180;
+        const beltWeight = beltArea * beltWeightPerSqIn;
+        const totalWeight = beltWeight + maxLoad;
+
+        // Belt pull: force to move belt + load across the bed
+        const beltPull = totalWeight * bedFriction;
+
+        // Minimum HP
+        const hp = (conveyorSpeed * beltPull) / 33000;
+
+        // Capstan equation: T_tight / T_slack = e^(μθ)
+        // T_tight - T_slack = beltPull (effective tension)
+        const capstanRatio = Math.exp(pulleyFriction * wrapAngleRad);
+        const slackSide = beltPull / (capstanRatio - 1);
+        const tightSide = slackSide * capstanRatio;
+
+        // Resultant force on pulley shaft (law of cosines)
+        const resultantForce = Math.sqrt(
+          tightSide * tightSide + slackSide * slackSide
+          - 2 * tightSide * slackSide * Math.cos(wrapAngleRad)
+        );
+
+        // Torque at drive pulley
+        const torque = beltPull * pulleyRadius;
+
+        return {
+          beltWeight, totalWeight, beltPull, hp, capstanRatio,
+          slackSide, tightSide, resultantForce, torque, wrapAngleRad,
+        };
+      }, [beltArea, beltWeightPerSqIn, bedFriction, pulleyFriction, wrapAngleDeg, maxLoad, conveyorSpeed, pulleyRadius]);
+
+      return (
+        <div style={{ padding:'24px 12px', minHeight:'100vh' }}>
+          <div style={{ maxWidth:900, margin:'0 auto' }}>
+
+            <div style={{ marginBottom:20, borderBottom:'2px solid var(--accent)', paddingBottom:16 }}>
+              <h1 style={{ margin:0, fontSize:22, fontWeight:700, letterSpacing:-0.5, color:'var(--accent)' }}>Belt Drive Calculator</h1>
+              <p style={{ margin:'4px 0 0', fontSize:13, color:'var(--muted)' }}>Basic belt tension, HP, capstan, and torque calculations</p>
+            </div>
+
+            {/* Inputs */}
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:16, marginBottom:24 }}>
+              <InputField label="Belt Area" value={beltArea} onChange={setBeltArea} step="1" unit="in²" />
+              <InputField label="Belt Weight" value={beltWeightPerSqIn} onChange={setBeltWeightPerSqIn} step="0.001" unit="lb/in²" />
+              <InputField label="Bed Friction Coefficient" value={bedFriction} onChange={setBedFriction} step="0.01" note="Slider bed or roller bed" />
+              <InputField label="Drive Pulley Friction Coefficient" value={pulleyFriction} onChange={setPulleyFriction} step="0.01" />
+              <InputField label="Belt Wrap at Drive Pulley" value={wrapAngleDeg} onChange={setWrapAngleDeg} step="1" unit="degrees" />
+              <InputField label="Max Load Carried" value={maxLoad} onChange={setMaxLoad} step="1" unit="lbs" />
+              <InputField label="Conveyor Speed" value={conveyorSpeed} onChange={setConveyorSpeed} step="1" unit="FPM" />
+              <InputField label="Drive Pulley Radius" value={pulleyRadius} onChange={setPulleyRadius} step="0.125" unit="in" />
+            </div>
+
+            {/* Intermediate values */}
+            <div style={{ ...cardStyle, marginBottom:16, background:'rgba(34,197,94,0.04)', borderColor:'var(--accent2)' }}>
+              <div style={{ fontSize:11, fontWeight:600, textTransform:'uppercase', letterSpacing:1, color:'var(--accent2)', marginBottom:10 }}>Intermediate Values</div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:10 }}>
+                <OutputStat label="Belt Weight" value={results.beltWeight.toFixed(2)} unit="lbs" />
+                <OutputStat label="Total Weight (belt + load)" value={results.totalWeight.toFixed(2)} unit="lbs" />
+                <OutputStat label="Wrap Angle" value={results.wrapAngleRad.toFixed(4)} unit="rad" />
+                <OutputStat label="Capstan Ratio (e^μθ)" value={results.capstanRatio.toFixed(4)} unit="" />
+              </div>
+            </div>
+
+            {/* Results */}
+            <div style={{ ...cardStyle, borderColor:'var(--accent)' }}>
+              <div style={{ fontSize:11, fontWeight:600, textTransform:'uppercase', letterSpacing:1, color:'var(--accent)', marginBottom:10 }}>Results</div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:12 }}>
+                <OutputStat label="Belt Pull (effective tension)" value={results.beltPull.toFixed(2)} unit="lbs" accent />
+                <OutputStat label="Minimum HP Required" value={results.hp.toFixed(4)} unit="HP" accent />
+                <OutputStat label="Tight Side Tension" value={results.tightSide.toFixed(2)} unit="lbs" />
+                <OutputStat label="Slack Side Tension" value={results.slackSide.toFixed(2)} unit="lbs" />
+                <OutputStat label="Resultant Force on Pulley" value={results.resultantForce.toFixed(2)} unit="lbs" />
+                <OutputStat label="Drive Pulley Torque" value={results.torque.toFixed(2)} unit="in·lbs" />
+              </div>
+
+              {/* Formulas reference */}
+              <div style={{ marginTop:14, padding:10, background:'var(--surface2)', borderRadius:6, fontSize:11, color:'var(--muted)', lineHeight:1.7, fontFamily:"'IBM Plex Mono', monospace" }}>
+                <strong style={{ color:'var(--text)' }}>Formulas:</strong><br/>
+                Belt Pull = (Belt Weight + Max Load) × Bed Friction<br/>
+                HP = (Speed × Belt Pull) / 33,000<br/>
+                T_slack = Belt Pull / (e^(μθ) − 1)<br/>
+                T_tight = T_slack × e^(μθ)<br/>
+                F_resultant = √(T_tight² + T_slack² − 2 × T_tight × T_slack × cos(θ))<br/>
+                Torque = Belt Pull × Pulley Radius
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(App));
+  </script>
+</body>
+</html>
