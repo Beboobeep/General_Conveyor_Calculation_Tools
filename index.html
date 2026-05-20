@@ -19,6 +19,7 @@
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <script type="text/babel">
 const{useState,useMemo}=React;
 const PI=Math.PI,G=32.2;
@@ -77,6 +78,144 @@ function defaultPulley(index){
     rollerMass:0,
     rollerRadius:0,
   };
+}
+
+function exportToExcel(r,pulleys,inputs){
+  const wb=XLSX.utils.book_new();
+
+  // === Sheet 1: Summary ===
+  const summary=[];
+  summary.push(['BELT DRIVE CALCULATOR — SYSTEM SUMMARY']);
+  summary.push(['Generated',new Date().toLocaleString()]);
+  summary.push([]);
+
+  summary.push(['=== INPUTS ===','','Value','Unit']);
+  summary.push(['Belt Speed Mode','',inputs.speedMode==='direct'?'Direct FPM':'From RPM','']);
+  summary.push(['Conveyor Speed','',r.speed.toFixed(2),'FPM']);
+  summary.push(['Drive Roller RPM','',r.computedRPM.toFixed(2),'RPM']);
+  if(inputs.speedMode==='rpm'){
+    summary.push(['Drive Pulley Diameter','',inputs.drivePulleyDiameter,'in']);
+    summary.push(['Pulley RPM (input)','',inputs.drivePulleyRPM,'RPM']);
+  }
+  summary.push(['Total Belt Length','',inputs.beltLength,'in']);
+  summary.push(['Belt Width','',inputs.beltWidth,'in']);
+  summary.push(['Belt Weight','',inputs.beltWeightPerSqIn,'lb/in²']);
+  summary.push(['Bed Friction Coefficient','',inputs.bedFriction,'']);
+  summary.push(['Max Load Carried','',inputs.maxLoad,'lbs']);
+  summary.push(['Conveyor Length','',inputs.conveyorLength,'ft']);
+  summary.push(['Incline Angle','',inputs.inclineAngle,'degrees']);
+  summary.push(['Special Loads','',inputs.specialLoads,'lbs']);
+  summary.push(['Acceleration Time','',inputs.accelTime,'sec']);
+  summary.push(['Service Factor','',inputs.serviceFactor,'×']);
+  summary.push(['Motor RPM','',inputs.motorRPM,'RPM']);
+  summary.push([]);
+
+  summary.push(['=== BELT SPEED ===','','Value','Unit','Equation']);
+  summary.push(['Belt Speed','',r.speed.toFixed(2),'FPM','V = π × D × N / 12']);
+  summary.push(['Drive Roller RPM','',r.computedRPM.toFixed(2),'RPM','']);
+  summary.push([]);
+
+  summary.push(['=== EFFECTIVE PULL & HORSEPOWER ===','','Value','Unit','Equation']);
+  summary.push(['Belt Area (computed)','',r.beltArea.toFixed(1),'in²','Length × Width']);
+  summary.push(['Belt Weight','',r.beltWeight.toFixed(2),'lbs','Area × Weight/in²']);
+  summary.push(['Total Moving Weight','',r.totalWeight.toFixed(2),'lbs','Belt Weight + Max Load']);
+  summary.push(['Friction Force (F_f)','',r.F_f.toFixed(2),'lbs','(Belt Wt + Max Load) × μ_bed']);
+  summary.push(['Incline Force (F_g)','',r.F_g.toFixed(2),'lbs','Total Weight × sin(θ)']);
+  summary.push(['Acceleration Force (F_a)','',r.F_a.toFixed(2),'lbs','(W × V/60) / (g × t)']);
+  summary.push(['Special Loads (F_s)','',r.F_s.toFixed(2),'lbs','User input']);
+  summary.push(['Effective Pull (F_e)','OUTPUT',r.F_e.toFixed(2),'lbs','F_f + F_a + F_g + F_s']);
+  summary.push(['Calculated HP','OUTPUT',r.hp.toFixed(4),'HP','(F_e × V) / 33,000']);
+  summary.push(['Design HP (w/ SF)','OUTPUT',r.hpDesign.toFixed(4),'HP','HP × Service Factor']);
+  summary.push([]);
+
+  const dp=pulleys.find(p=>p.isDrive)||pulleys[0];
+  summary.push(['=== CAPSTAN (Drive Pulley: '+dp.name+') ===','','Value','Unit','Equation']);
+  summary.push(['Drive Pulley Friction Coeff.','INPUT',dp.frictionCoeff,'','']);
+  summary.push(['Belt Wrap Angle','INPUT',dp.wrapAngleDeg,'degrees','']);
+  summary.push(['Belt Wrap Angle','',r.driveWrapRad.toFixed(4),'radians','degrees × π / 180']);
+  summary.push(['Capstan Ratio (e^μθ)','',r.capRatio.toFixed(4),'','e^(μ × θ)']);
+  summary.push(['Tight Side Tension','OUTPUT',r.tightSide.toFixed(2),'lbs','T_slack × e^(μθ)']);
+  summary.push(['Slack Side Tension','OUTPUT',r.slackSide.toFixed(2),'lbs','F_e / (e^(μθ) − 1)']);
+  summary.push([]);
+
+  summary.push(['=== INERTIA & GEARING ===','','Value','Unit','Equation']);
+  summary.push(['Total System Inertia (J)','OUTPUT',r.J_total.toFixed(6),'slug·ft²','Σ(½mr²) all pulleys']);
+  summary.push(['Angular Acceleration (α)','OUTPUT',r.angularAccel.toFixed(2),'rad/s²','(V/r)/t']);
+  summary.push(['Inertial Torque','OUTPUT',r.inertialTorque.toFixed(4),'ft·lbs','T = Jα']);
+  summary.push(['Gear Ratio','OUTPUT',r.gearRatio.toFixed(2),':1','Motor RPM / Drive RPM']);
+  summary.push(['Reflected Inertia','OUTPUT',r.J_reflected.toFixed(8),'slug·ft²','J_total / GR²']);
+  summary.push([]);
+
+  summary.push(['=== DUTY CYCLE ===','','Value','Unit','Equation']);
+  summary.push(['Start Torque','INPUT',inputs.startTorque,'ft·lbs','']);
+  summary.push(['Start Duration','INPUT',inputs.startTime,'sec','']);
+  summary.push(['Run Torque','INPUT',inputs.runTorque,'ft·lbs','']);
+  summary.push(['Run Duration','INPUT',inputs.runTime,'sec','']);
+  summary.push(['Stop Torque','INPUT',inputs.stopTorque,'ft·lbs','']);
+  summary.push(['Stop Duration','INPUT',inputs.stopTime,'sec','']);
+  summary.push(['Total Cycle Time','OUTPUT',r.tTotal.toFixed(1),'sec','t_start + t_run + t_stop']);
+  summary.push(['Duty Cycle','OUTPUT',(r.dutyCycle*100).toFixed(1),'%','t_run / t_total']);
+  summary.push(['RMS Torque','OUTPUT',r.T_rms.toFixed(2),'ft·lbs','√(Σ(T²t) / t_total)']);
+
+  const ws1=XLSX.utils.aoa_to_sheet(summary);
+  ws1['!cols']=[{wch:35},{wch:10},{wch:16},{wch:12},{wch:40}];
+  XLSX.utils.book_append_sheet(wb,ws1,'Summary');
+
+  // === Sheet per pulley ===
+  pulleys.forEach((p,i)=>{
+    const pr=r.pulleyResults[i];
+    const rows=[];
+    rows.push([`${p.name} — ${p.isDrive?'DRIVE':'DRIVEN ('+p.side+' side)'}`]);
+    rows.push(['Generated',new Date().toLocaleString()]);
+    rows.push([]);
+
+    rows.push(['=== PULLEY INPUTS ===','','Value','Unit']);
+    rows.push(['Role','',p.isDrive?'Drive':'Driven','']);
+    if(!p.isDrive) rows.push(['Side','',p.side,'']);
+    rows.push(['Wrap Angle','',p.wrapAngleDeg,'degrees']);
+    rows.push(['Pulley Radius','',p.radius,'in']);
+    if(p.isDrive) rows.push(['Friction Coefficient','',p.frictionCoeff,'']);
+    rows.push(['Shaft Diameter','',p.shaftDiameter,'in']);
+    rows.push(['Face Width','',p.faceWidth,'in']);
+    rows.push(['Hub Centers','',p.hubCenters,'in']);
+    rows.push(['Tube OD','',p.tubeOD,'in']);
+    rows.push(['Tube Wall','',p.tubeWall,'in']);
+    rows.push(['Profile','',p.isVProfile?'V-Profile':'Standard Drum','']);
+    rows.push(['Roller Mass','',p.rollerMass,'lbs']);
+    rows.push(['Roller Radius','',p.rollerRadius,'in']);
+    rows.push([]);
+
+    rows.push(['=== TENSION & FORCES ===','','Value','Unit','Equation']);
+    rows.push(['Belt Tension (side 1)','OUTPUT',pr.T1.toFixed(2),'lbs',p.isDrive?'T_tight':'T_'+p.side]);
+    rows.push(['Belt Tension (side 2)','OUTPUT',pr.T2.toFixed(2),'lbs',p.isDrive?'T_slack':'T_'+p.side]);
+    rows.push(['Resultant Force','OUTPUT',pr.resultant.toFixed(2),'lbs','√(T1² + T2² − 2·T1·T2·cos(θ))']);
+    if(p.isDrive) rows.push(['Drive Torque','OUTPUT',pr.torque.toFixed(2),'in·lbs','F_e × radius']);
+    rows.push([]);
+
+    rows.push(['=== PCI SHAFT ANALYSIS ===','','Value','Unit','Equation']);
+    rows.push(['Bearing Centers (computed)','',pr.bearingCenters.toFixed(3),'in','FaceWidth + 4 × D']);
+    rows.push(['Max Load — Shaft Stress (Eq.1)','OUTPUT',pr.maxF_stress.toFixed(2),'lbs','(1000·π·D³) / (FW + 4D − HC)']);
+    rows.push(['Max Load — Shaft Defl. (Eq.2)','OUTPUT',pr.maxF_defl.toFixed(2),'lbs','(8435.77·π·D⁴) / ((FW+4D−HC)×HC)']);
+    rows.push(['Governing Limit','OUTPUT',pr.maxF_gov.toFixed(2),'lbs','min(Eq.1, Eq.2) — governed by '+pr.govBy]);
+    rows.push(['Actual Shaft Bending Stress','OUTPUT',pr.shaftStress.toFixed(1),'psi','σ = M·c/I — limit: 8,000 psi']);
+    rows.push(['Actual Shaft Deflection','OUTPUT',pr.shaftDefl.toFixed(6),'in/in','limit: 0.00232711 in/in (8 arcmin)']);
+    rows.push(['Shaft Status','',pr.shaftOk?'PASS':'FAIL','','Resultant vs. governing limit']);
+    rows.push([]);
+
+    rows.push(['=== PCI TUBE ANALYSIS ===','','Value','Unit','Equation']);
+    rows.push(['Tube ID (computed)','',pr.tubeID.toFixed(3),'in','OD − 2 × Wall']);
+    rows.push(['Tube Stress (Eq.3)','OUTPUT',pr.tubeStress.toFixed(1),'psi','(OD/2 × F × HC) / (4 × I_tube)']);
+    rows.push(['Tube Stress Limit','',pr.tubeLimit.toLocaleString(),'psi',p.isVProfile?'V-Profile limit':'Standard drum limit']);
+    rows.push(['Tube Status','',pr.tubeOk?'PASS':'FAIL','','Tube stress vs. limit']);
+
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols']=[{wch:35},{wch:10},{wch:16},{wch:12},{wch:45}];
+    // Sanitize sheet name
+    const sheetName=(p.name||`Pulley ${i+1}`).replace(/[:\\/?*\[\]]/g,'').substring(0,31);
+    XLSX.utils.book_append_sheet(wb,ws,sheetName);
+  });
+
+  XLSX.writeFile(wb,'Belt_Drive_Analysis.xlsx');
 }
 
 function App(){
@@ -252,8 +391,19 @@ function App(){
     <div style={{maxWidth:1100,margin:'0 auto'}}>
 
       <div style={{marginBottom:20,borderBottom:'2px solid var(--accent)',paddingBottom:16}}>
-        <h1 style={{margin:0,fontSize:22,fontWeight:700,letterSpacing:-0.5,color:'var(--accent)'}}>Belt Drive Calculator</h1>
-        <p style={{margin:'4px 0 0',fontSize:13,color:'var(--muted)'}}>Multi-pulley conveyor system analysis — belt tension, HP, capstan, inertia, duty cycle, PCI shaft/tube</p>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}}>
+          <div>
+            <h1 style={{margin:0,fontSize:22,fontWeight:700,letterSpacing:-0.5,color:'var(--accent)'}}>Belt Drive Calculator</h1>
+            <p style={{margin:'4px 0 0',fontSize:13,color:'var(--muted)'}}>Multi-pulley conveyor system analysis — belt tension, HP, capstan, inertia, duty cycle, PCI shaft/tube</p>
+          </div>
+          <button onClick={()=>exportToExcel(r,pulleys,{speedMode,conveyorSpeed,drivePulleyDiameter,drivePulleyRPM,
+            beltLength,beltWidth,beltWeightPerSqIn,bedFriction,maxLoad,conveyorLength,inclineAngle,specialLoads,accelTime,
+            serviceFactor,motorRPM,startTorque,startTime,runTorque,runTime,stopTorque,stopTime})} style={{
+            padding:'10px 20px',borderRadius:6,border:'1px solid var(--accent)',
+            background:'rgba(34,197,94,0.15)',color:'var(--accent)',fontWeight:700,fontSize:13,cursor:'pointer',
+            letterSpacing:0.5,
+          }}>Export to Excel</button>
+        </div>
       </div>
 
       {/* ===== BELT SPEED ===== */}
