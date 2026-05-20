@@ -10,6 +10,8 @@
     body{margin:0;padding:0;font-family:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;background:#000;color:#f0f0f0;
       --bg:#000;--surface:#111;--surface2:#1a1a1a;--border:#333;--text:#f0f0f0;--muted:#999;
       --accent:#22c55e;--accent2:#4ade80;--danger:#ef4444;--success:#22c55e;--highlight:#86efac}
+    input[type=number]{-moz-appearance:textfield}
+    input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
   </style>
 </head>
 <body>
@@ -19,27 +21,28 @@
 <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script type="text/babel">
 const{useState,useMemo}=React;
-const PI=Math.PI, G=32.2;
+const PI=Math.PI,G=32.2;
 
 const iS={width:'100%',padding:'8px 10px',borderRadius:5,border:'1px solid var(--border)',background:'var(--surface2)',color:'var(--text)',fontSize:14,fontFamily:"'IBM Plex Mono',monospace",boxSizing:'border-box'};
 const lS={fontSize:11,fontWeight:600,textTransform:'uppercase',letterSpacing:1,color:'var(--muted)',display:'block',marginBottom:8};
 const cS={background:'var(--surface)',borderRadius:8,padding:16,border:'1px solid var(--border)'};
+const smallInput={...iS,padding:'6px 8px',fontSize:13};
 
 function Out({label,value,unit,accent,warn}){
-  return(<div style={{background:'var(--surface2)',borderRadius:6,padding:'12px 14px',border:'1px solid var(--border)'}}>
-    <div style={{fontSize:10,color:'var(--muted)',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>{label}</div>
-    <div style={{fontSize:20,fontWeight:700,fontFamily:"'IBM Plex Mono',monospace",color:warn?'var(--danger)':accent?'var(--accent)':'var(--text)'}}>
-      {value}<span style={{fontSize:12,fontWeight:500,color:'var(--muted)',marginLeft:4}}>{unit}</span>
+  return(<div style={{background:'var(--surface2)',borderRadius:6,padding:'10px 12px',border:'1px solid var(--border)'}}>
+    <div style={{fontSize:10,color:'var(--muted)',textTransform:'uppercase',letterSpacing:0.5,marginBottom:3}}>{label}</div>
+    <div style={{fontSize:18,fontWeight:700,fontFamily:"'IBM Plex Mono',monospace",color:warn?'var(--danger)':accent?'var(--accent)':'var(--text)'}}>
+      {value}<span style={{fontSize:11,fontWeight:500,color:'var(--muted)',marginLeft:4}}>{unit}</span>
     </div>
   </div>);
 }
 function StatusOut({label,value,unit,ok,statusText}){
-  return(<div style={{background:'var(--surface2)',borderRadius:6,padding:'12px 14px',border:`1px solid ${ok?'rgba(34,197,94,0.3)':'rgba(239,68,68,0.3)'}`}}>
-    <div style={{fontSize:10,color:'var(--muted)',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>{label}</div>
-    <div style={{fontSize:20,fontWeight:700,fontFamily:"'IBM Plex Mono',monospace",color:ok?'var(--accent)':'var(--danger)'}}>
-      {value}<span style={{fontSize:12,fontWeight:500,color:'var(--muted)',marginLeft:4}}>{unit}</span>
+  return(<div style={{background:'var(--surface2)',borderRadius:6,padding:'10px 12px',border:`1px solid ${ok?'rgba(34,197,94,0.3)':'rgba(239,68,68,0.3)'}`}}>
+    <div style={{fontSize:10,color:'var(--muted)',textTransform:'uppercase',letterSpacing:0.5,marginBottom:3}}>{label}</div>
+    <div style={{fontSize:18,fontWeight:700,fontFamily:"'IBM Plex Mono',monospace",color:ok?'var(--accent)':'var(--danger)'}}>
+      {value}<span style={{fontSize:11,fontWeight:500,color:'var(--muted)',marginLeft:4}}>{unit}</span>
     </div>
-    <div style={{fontSize:10,fontWeight:600,marginTop:4,color:ok?'var(--accent)':'var(--danger)'}}>{statusText}</div>
+    <div style={{fontSize:10,fontWeight:600,marginTop:3,color:ok?'var(--accent)':'var(--danger)'}}>{statusText}</div>
   </div>);
 }
 function In({label,value,onChange,step,min,unit,note}){
@@ -56,12 +59,32 @@ function Formulas({children}){
   return(<div style={{marginTop:12,padding:10,background:'var(--surface2)',borderRadius:6,fontSize:11,color:'var(--muted)',lineHeight:1.7,fontFamily:"'IBM Plex Mono',monospace"}}>{children}</div>);
 }
 
+function defaultPulley(index){
+  return{
+    name:`Pulley ${index+1}`,
+    isDrive:index===0,
+    side:'carry', // 'carry' or 'return'
+    wrapAngleDeg:180,
+    radius:1.5,
+    diameter:3.0,
+    frictionCoeff:0.35,
+    shaftDiameter:1.0,
+    faceWidth:2.0,
+    hubCenters:3.0,
+    tubeOD:4.0,
+    tubeWall:0.25,
+    isVProfile:false,
+    rollerMass:0,
+    rollerRadius:0,
+  };
+}
+
 function App(){
-  // Speed mode
-  const[speedMode,setSpeedMode]=useState('direct'); // 'direct' or 'rpm'
+  // Speed
+  const[speedMode,setSpeedMode]=useState('direct');
   const[conveyorSpeed,setConveyorSpeed]=useState(100);
-  const[pulleyDiameter,setPulleyDiameter]=useState(3.0);
-  const[pulleyRPM,setPulleyRPM]=useState(127.3);
+  const[drivePulleyDiameter,setDrivePulleyDiameter]=useState(3.0);
+  const[drivePulleyRPM,setDrivePulleyRPM]=useState(127.3);
 
   // Belt & load
   const[beltLength,setBeltLength]=useState(25);
@@ -70,24 +93,9 @@ function App(){
   const[bedFriction,setBedFriction]=useState(0.3);
   const[maxLoad,setMaxLoad]=useState(50);
   const[conveyorLength,setConveyorLength]=useState(10);
-
-  // Incline
   const[inclineAngle,setInclineAngle]=useState(0);
-
-  // Special loads
   const[specialLoads,setSpecialLoads]=useState(0);
-
-  // Acceleration
   const[accelTime,setAccelTime]=useState(0);
-
-  // Drive pulley
-  const[pulleyFriction,setPulleyFriction]=useState(0.35);
-  const[wrapAngleDeg,setWrapAngleDeg]=useState(180);
-  const[pulleyRadius,setPulleyRadius]=useState(1.5);
-
-  // Inertia
-  const[rollerMass,setRollerMass]=useState(0);
-  const[rollerRadius,setRollerRadius]=useState(0);
 
   // Duty cycle
   const[startTorque,setStartTorque]=useState(0);
@@ -96,137 +104,156 @@ function App(){
   const[runTime,setRunTime]=useState(0);
   const[stopTorque,setStopTorque]=useState(0);
   const[stopTime,setStopTime]=useState(0);
-
-  // Service factor & gear ratio
   const[serviceFactor,setServiceFactor]=useState(1.5);
   const[motorRPM,setMotorRPM]=useState(1750);
 
-  // PCI shaft & tube
-  const[shaftDiameter,setShaftDiameter]=useState(1.0);
-  const[faceWidth,setFaceWidth]=useState(2.0);
-  const[hubCenters,setHubCenters]=useState(3.0);
-  const[tubeOD,setTubeOD]=useState(4.0);
-  const[tubeWall,setTubeWall]=useState(0.25);
-  const[isVProfile,setIsVProfile]=useState(false);
+  // Pulleys
+  const[pulleyCount,setPulleyCount]=useState(2);
+  const[pulleys,setPulleys]=useState([defaultPulley(0),defaultPulley(1)]);
 
-  const r=useMemo(()=>{
+  // Sync pulley array with count
+  const handlePulleyCount=(n)=>{
+    const clamped=Math.max(1,Math.min(n,20));
+    setPulleyCount(clamped);
+    setPulleys(prev=>{
+      const next=[...prev];
+      while(next.length<clamped) next.push(defaultPulley(next.length));
+      if(next.length>clamped) next.length=clamped;
+      // Ensure at least one drive
+      if(!next.some(p=>p.isDrive)) next[0].isDrive=true;
+      return next;
+    });
+  };
+
+  const updatePulley=(idx,field,val)=>{
+    setPulleys(prev=>{
+      const next=[...prev];
+      next[idx]={...next[idx],[field]:val};
+      // If setting this as drive, unset others
+      if(field==='isDrive'&&val){
+        next.forEach((p,i)=>{if(i!==idx)next[i]={...next[i],isDrive:false};});
+      }
+      return next;
+    });
+  };
+
+  const driveIdx=pulleys.findIndex(p=>p.isDrive);
+  const drivePulley=driveIdx>=0?pulleys[driveIdx]:pulleys[0];
+
+  const results=useMemo(()=>{
     // === BELT SPEED ===
     let speed;
-    if(speedMode==='rpm'){
-      speed=(PI*pulleyDiameter*pulleyRPM)/12;
-    }else{
-      speed=conveyorSpeed;
-    }
-    const computedRPM=speedMode==='direct'?(conveyorSpeed*12)/(PI*pulleyDiameter):pulleyRPM;
+    if(speedMode==='rpm') speed=(PI*drivePulleyDiameter*drivePulleyRPM)/12;
+    else speed=conveyorSpeed;
+    const computedRPM=speedMode==='direct'?(conveyorSpeed*12)/(PI*drivePulleyDiameter):drivePulleyRPM;
 
     // === WEIGHTS ===
     const beltArea=beltLength*beltWidth;
     const beltWeight=beltArea*beltWeightPerSqIn;
     const totalWeight=beltWeight+maxLoad;
 
-    // === FRICTION FORCE ===
+    // === FORCES ===
     const F_f=totalWeight*bedFriction;
-
-    // === INCLINE FORCE ===
     const inclineRad=inclineAngle*PI/180;
     const F_g=totalWeight*Math.sin(inclineRad);
-
-    // === ACCELERATION FORCE ===
-    // V is in ft/min, convert to ft/s: V/60
     const F_a=accelTime>0?(totalWeight*(speed/60))/(G*accelTime):0;
-
-    // === SPECIAL LOADS ===
     const F_s=specialLoads;
-
-    // === EFFECTIVE PULL ===
     const F_e=F_f+F_a+F_g+F_s;
 
     // === HP ===
     const hp=(F_e*speed)/33000;
     const hpDesign=hp*serviceFactor;
 
-    // === CAPSTAN ===
-    const wrapRad=wrapAngleDeg*PI/180;
-    const capRatio=Math.exp(pulleyFriction*wrapRad);
+    // === CAPSTAN (drive pulley) ===
+    const driveWrapRad=drivePulley.wrapAngleDeg*PI/180;
+    const capRatio=Math.exp(drivePulley.frictionCoeff*driveWrapRad);
     const slackSide=F_e/(capRatio-1);
     const tightSide=slackSide*capRatio;
 
-    // === RESULTANT FORCE ===
-    const resultant=Math.sqrt(tightSide*tightSide+slackSide*slackSide-2*tightSide*slackSide*Math.cos(wrapRad));
+    // === PER-PULLEY ANALYSIS ===
+    const pulleyResults=pulleys.map((p,i)=>{
+      const wrapRad=p.wrapAngleDeg*PI/180;
+      let resultant,T1,T2;
 
-    // === TORQUE AT DRUM ===
-    const torque=F_e*pulleyRadius;
+      if(p.isDrive){
+        T1=tightSide; T2=slackSide;
+        resultant=Math.sqrt(T1*T1+T2*T2-2*T1*T2*Math.cos(wrapRad));
+      }else{
+        // Driven: both sides see same tension based on carry/return
+        const T=p.side==='carry'?tightSide:slackSide;
+        T1=T; T2=T;
+        resultant=Math.sqrt(T*T+T*T-2*T*T*Math.cos(wrapRad));
+        // Simplifies to: resultant = 2*T*sin(wrap/2)
+      }
 
-    // === ROTATIONAL INERTIA ===
-    // J = 0.5 * m * r^2 (slugs·ft² if m in slugs, r in ft)
-    // Mass input is in lbs, convert to slugs: m/g
-    // Radius input is in inches, convert to ft: r/12
-    const J_roller=rollerMass>0?0.5*(rollerMass/G)*((rollerRadius/12)*(rollerRadius/12)):0;
+      const torque=p.isDrive?F_e*p.radius:0;
 
-    // Angular acceleration: alpha = (V/r)/t in rad/s²
-    // V in ft/min → ft/s = V/60, r in ft = pulleyRadius/12
-    const angularAccel=accelTime>0?((speed/60)/(pulleyRadius/12))/accelTime:0;
-    const inertialTorque=J_roller*angularAccel; // ft·lbs
+      // PCI
+      const D=p.shaftDiameter;
+      const bearingCenters=p.faceWidth+4*D;
+      const stressDenom=p.faceWidth+4*D-p.hubCenters;
+      const maxF_stress=stressDenom>0?(1000*PI*D*D*D)/stressDenom:Infinity;
+      const deflDenom=stressDenom*p.hubCenters;
+      const maxF_defl=deflDenom>0?(8435.77*PI*D*D*D*D)/deflDenom:Infinity;
+      const maxF_gov=Math.min(maxF_stress,maxF_defl);
+      const govBy=maxF_stress<=maxF_defl?'stress':'deflection';
 
-    // === GEAR RATIO ===
-    const driveRPM=computedRPM;
-    const gearRatio=driveRPM>0?motorRPM/driveRPM:1;
+      const I_shaft=(PI*D*D*D*D)/64;
+      const momentArm=0.5*resultant*0.5*(bearingCenters-p.hubCenters);
+      const shaftStress=I_shaft>0?(momentArm*(D/2))/I_shaft:Infinity;
+      const E_steel=29000000;
+      const shaftDefl=I_shaft>0?(resultant*0.5*(bearingCenters-p.hubCenters)*p.hubCenters)/(4*E_steel*I_shaft):Infinity;
 
-    // === REFLECTED INERTIA ===
-    const J_reflected=gearRatio>0?J_roller/(gearRatio*gearRatio):0;
+      const shaftStressOk=resultant<=maxF_stress;
+      const shaftDeflOk=resultant<=maxF_defl;
+      const shaftOk=resultant<=maxF_gov;
 
-    // === DUTY CYCLE ===
+      const tubeID=p.tubeOD-2*p.tubeWall;
+      const I_tube=(PI*(p.tubeOD*p.tubeOD*p.tubeOD*p.tubeOD-tubeID*tubeID*tubeID*tubeID))/64;
+      const tubeStress=I_tube>0?((p.tubeOD/2)*maxF_gov*p.hubCenters)/(4*I_tube):Infinity;
+      const tubeLimit=p.isVProfile?3400:10000;
+      const tubeOk=tubeStress<=tubeLimit;
+
+      // Inertia
+      const J=p.rollerMass>0?0.5*(p.rollerMass/G)*((p.rollerRadius/12)*(p.rollerRadius/12)):0;
+
+      return{name:p.name,isDrive:p.isDrive,side:p.side,wrapRad,T1,T2,resultant,torque,
+        bearingCenters,maxF_stress,maxF_defl,maxF_gov,govBy,
+        shaftStress,shaftDefl,shaftStressOk,shaftDeflOk,shaftOk,
+        tubeID,tubeStress,tubeLimit,tubeOk,J};
+    });
+
+    // Total inertia & reflected
+    const J_total=pulleyResults.reduce((s,pr)=>s+pr.J,0);
+    const angularAccel=accelTime>0?((speed/60)/(drivePulley.radius/12))/accelTime:0;
+    const inertialTorque=J_total*angularAccel;
+    const gearRatio=computedRPM>0?motorRPM/computedRPM:1;
+    const J_reflected=gearRatio>0?J_total/(gearRatio*gearRatio):0;
+
+    // Duty cycle
     const tTotal=startTime+runTime+stopTime;
     const dutyCycle=tTotal>0?runTime/tTotal:0;
-    const rmsNumerator=startTorque*startTorque*startTime+runTorque*runTorque*runTime+stopTorque*stopTorque*stopTime;
-    const T_rms=tTotal>0?Math.sqrt(rmsNumerator/tTotal):0;
+    const rmsNum=startTorque*startTorque*startTime+runTorque*runTorque*runTime+stopTorque*stopTorque*stopTime;
+    const T_rms=tTotal>0?Math.sqrt(rmsNum/tTotal):0;
 
-    // === PCI SHAFT ===
-    const D=shaftDiameter;
-    const bearingCenters=faceWidth+4*D;
-    const stressDenom=faceWidth+4*D-hubCenters;
-    const maxF_stress=stressDenom>0?(1000*PI*D*D*D)/stressDenom:Infinity;
-    const deflDenom=stressDenom*hubCenters;
-    const maxF_defl=deflDenom>0?(8435.77*PI*D*D*D*D)/deflDenom:Infinity;
-    const maxF_gov=Math.min(maxF_stress,maxF_defl);
-    const govBy=maxF_stress<=maxF_defl?'stress':'deflection';
+    return{speed,computedRPM,beltArea:beltLength*beltWidth,beltWeight,totalWeight,
+      F_f,F_g,F_a,F_s,F_e,hp,hpDesign,
+      driveWrapRad,capRatio,slackSide,tightSide,
+      pulleyResults,J_total,angularAccel,inertialTorque,gearRatio,J_reflected,
+      tTotal,dutyCycle,T_rms};
+  },[speedMode,conveyorSpeed,drivePulleyDiameter,drivePulleyRPM,beltLength,beltWidth,beltWeightPerSqIn,
+    bedFriction,maxLoad,conveyorLength,inclineAngle,specialLoads,accelTime,
+    pulleys,startTorque,startTime,runTorque,runTime,stopTorque,stopTime,serviceFactor,motorRPM]);
 
-    const I_shaft=(PI*D*D*D*D)/64;
-    const momentArm=0.5*resultant*0.5*(bearingCenters-hubCenters);
-    const shaftStress=I_shaft>0?(momentArm*(D/2))/I_shaft:Infinity;
-    const E_steel=29000000;
-    const shaftDefl=I_shaft>0?(resultant*0.5*(bearingCenters-hubCenters)*hubCenters)/(4*E_steel*I_shaft):Infinity;
-
-    const shaftStressOk=resultant<=maxF_stress;
-    const shaftDeflOk=resultant<=maxF_defl;
-    const shaftOk=resultant<=maxF_gov;
-
-    // === PCI TUBE ===
-    const tubeID_val=tubeOD-2*tubeWall;
-    const I_tube=(PI*(tubeOD*tubeOD*tubeOD*tubeOD-tubeID_val*tubeID_val*tubeID_val*tubeID_val))/64;
-    const tubeStress=I_tube>0?((tubeOD/2)*maxF_gov*hubCenters)/(4*I_tube):Infinity;
-    const tubeLimit=isVProfile?3400:10000;
-    const tubeOk=tubeStress<=tubeLimit;
-
-    return{speed,computedRPM,beltArea,beltWeight,totalWeight,F_f,F_g,F_a,F_s,F_e,hp,hpDesign,
-      wrapRad,capRatio,slackSide,tightSide,resultant,torque,
-      J_roller,angularAccel,inertialTorque,gearRatio,J_reflected,
-      tTotal,dutyCycle,T_rms,
-      bearingCenters,maxF_stress,maxF_defl,maxF_gov,govBy,
-      shaftStress,shaftDefl,shaftStressOk,shaftDeflOk,shaftOk,
-      tubeID:tubeID_val,tubeStress,tubeLimit,tubeOk};
-  },[speedMode,conveyorSpeed,pulleyDiameter,pulleyRPM,beltLength,beltWidth,beltWeightPerSqIn,bedFriction,maxLoad,
-    conveyorLength,inclineAngle,specialLoads,accelTime,pulleyFriction,wrapAngleDeg,pulleyRadius,
-    rollerMass,rollerRadius,startTorque,startTime,runTorque,runTime,stopTorque,stopTime,
-    serviceFactor,motorRPM,shaftDiameter,faceWidth,hubCenters,tubeOD,tubeWall,isVProfile]);
+  const r=results;
 
   return(
     <div style={{padding:'24px 12px',minHeight:'100vh'}}>
-    <div style={{maxWidth:1050,margin:'0 auto'}}>
+    <div style={{maxWidth:1100,margin:'0 auto'}}>
 
       <div style={{marginBottom:20,borderBottom:'2px solid var(--accent)',paddingBottom:16}}>
         <h1 style={{margin:0,fontSize:22,fontWeight:700,letterSpacing:-0.5,color:'var(--accent)'}}>Belt Drive Calculator</h1>
-        <p style={{margin:'4px 0 0',fontSize:13,color:'var(--muted)'}}>Belt tension, effective pull, HP, capstan, torque, inertia, duty cycle, and PCI shaft/tube analysis</p>
+        <p style={{margin:'4px 0 0',fontSize:13,color:'var(--muted)'}}>Multi-pulley conveyor system analysis — belt tension, HP, capstan, inertia, duty cycle, PCI shaft/tube</p>
       </div>
 
       {/* ===== BELT SPEED ===== */}
@@ -244,15 +271,14 @@ function App(){
           {speedMode==='direct'?(
             <In label="Conveyor Speed" value={conveyorSpeed} onChange={setConveyorSpeed} step="1" unit="FPM"/>
           ):(<>
-            <In label="Drive Pulley Diameter" value={pulleyDiameter} onChange={setPulleyDiameter} step="0.125" unit="in"/>
-            <In label="Pulley RPM" value={pulleyRPM} onChange={setPulleyRPM} step="1" unit="RPM"/>
+            <In label="Drive Pulley Diameter" value={drivePulleyDiameter} onChange={setDrivePulleyDiameter} step="0.125" unit="in"/>
+            <In label="Pulley RPM" value={drivePulleyRPM} onChange={setDrivePulleyRPM} step="1" unit="RPM"/>
           </>)}
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:10,marginTop:12}}>
           <Out label="Belt Speed" value={r.speed.toFixed(2)} unit="FPM" accent/>
           <Out label="Drive Roller RPM" value={r.computedRPM.toFixed(2)} unit="RPM"/>
         </div>
-        <Formulas><strong style={{color:'var(--text)'}}>V</strong> = π × D × N / 12</Formulas>
       </div>
 
       {/* ===== BELT, LOAD & FRICTION ===== */}
@@ -266,7 +292,7 @@ function App(){
           <In label="Max Load Carried" value={maxLoad} onChange={setMaxLoad} step="1" unit="lbs"/>
           <In label="Conveyor Length" value={conveyorLength} onChange={setConveyorLength} step="0.5" unit="ft"/>
           <In label="Incline Angle" value={inclineAngle} onChange={setInclineAngle} step="0.5" unit="degrees" note="0 = horizontal"/>
-          <In label="Special Loads (scrapers, seals, etc.)" value={specialLoads} onChange={setSpecialLoads} step="1" unit="lbs"/>
+          <In label="Special Loads" value={specialLoads} onChange={setSpecialLoads} step="1" unit="lbs" note="Scrapers, seals, accumulation, etc."/>
           <In label="Acceleration Time" value={accelTime} onChange={setAccelTime} step="0.1" unit="sec" note="0 = continuous (no accel force)"/>
         </div>
       </div>
@@ -274,8 +300,8 @@ function App(){
       {/* ===== EFFECTIVE PULL & HP ===== */}
       <div style={{...cS,marginBottom:16,borderColor:'var(--accent)'}}>
         <Hdr color="var(--accent)">Effective Pull & Horsepower</Hdr>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))',gap:10,marginBottom:12}}>
-          <Out label="Belt Area (computed)" value={r.beltArea.toFixed(1)} unit="in²"/>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(150px, 1fr))',gap:10,marginBottom:12}}>
+          <Out label="Belt Area" value={r.beltArea.toFixed(1)} unit="in²"/>
           <Out label="Belt Weight" value={r.beltWeight.toFixed(2)} unit="lbs"/>
           <Out label="Total Moving Weight" value={r.totalWeight.toFixed(2)} unit="lbs"/>
           <Out label="Friction Force (F_f)" value={r.F_f.toFixed(2)} unit="lbs"/>
@@ -286,59 +312,190 @@ function App(){
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:12}}>
           <Out label="Effective Pull (F_e)" value={r.F_e.toFixed(2)} unit="lbs" accent/>
           <Out label="Calculated HP" value={r.hp.toFixed(4)} unit="HP" accent/>
-          <Out label="Design HP (w/ service factor)" value={r.hpDesign.toFixed(4)} unit="HP" accent/>
+          <Out label="Design HP (w/ SF)" value={r.hpDesign.toFixed(4)} unit="HP" accent/>
         </div>
         <Formulas>
-          <strong style={{color:'var(--text)'}}>F_e</strong> = F_f + F_a + F_g + F_s<br/>
-          F_f = (Belt Wt + Max Load) × μ_bed<br/>
-          F_g = Total Weight × sin(θ)<br/>
-          F_a = (W × V/60) / (g × t)<br/>
-          <strong style={{color:'var(--text)'}}>HP</strong> = (F_e × V) / 33,000 &nbsp;&nbsp;|&nbsp;&nbsp;
+          <strong style={{color:'var(--text)'}}>F_e</strong> = F_f + F_a + F_g + F_s &nbsp;|&nbsp;
+          <strong style={{color:'var(--text)'}}>HP</strong> = (F_e × V) / 33,000 &nbsp;|&nbsp;
           <strong style={{color:'var(--text)'}}>HP_design</strong> = HP × SF
         </Formulas>
       </div>
 
-      {/* ===== CAPSTAN & TENSIONS ===== */}
-      <div style={{...cS,marginBottom:16,background:'rgba(34,197,94,0.04)',borderColor:'var(--accent2)'}}>
-        <Hdr>Drive Pulley & Capstan</Hdr>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:12,marginBottom:12}}>
-          <In label="Drive Pulley Friction Coeff." value={pulleyFriction} onChange={setPulleyFriction} step="0.01"/>
-          <In label="Belt Wrap at Drive Pulley" value={wrapAngleDeg} onChange={setWrapAngleDeg} step="1" unit="degrees"/>
-          <In label="Drive Pulley Radius" value={pulleyRadius} onChange={setPulleyRadius} step="0.125" unit="in"/>
-        </div>
+      {/* ===== CAPSTAN SUMMARY ===== */}
+      <div style={{...cS,marginBottom:16,borderColor:'var(--accent)'}}>
+        <Hdr color="var(--accent)">Drive Pulley Capstan (Pulley: {drivePulley.name})</Hdr>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))',gap:10}}>
-          <Out label="Wrap Angle" value={r.wrapRad.toFixed(4)} unit="rad"/>
+          <Out label="Wrap Angle" value={r.driveWrapRad.toFixed(4)} unit="rad"/>
           <Out label="Capstan Ratio (e^μθ)" value={r.capRatio.toFixed(4)} unit=""/>
-          <Out label="Tight Side Tension" value={r.tightSide.toFixed(2)} unit="lbs"/>
-          <Out label="Slack Side Tension" value={r.slackSide.toFixed(2)} unit="lbs"/>
-          <Out label="Resultant Force on Pulley" value={r.resultant.toFixed(2)} unit="lbs" accent/>
-          <Out label="Drive Pulley Torque" value={r.torque.toFixed(2)} unit="in·lbs" accent/>
+          <Out label="Tight Side Tension" value={r.tightSide.toFixed(2)} unit="lbs" accent/>
+          <Out label="Slack Side Tension" value={r.slackSide.toFixed(2)} unit="lbs" accent/>
         </div>
         <Formulas>
           T_slack = F_e / (e^(μθ) − 1) &nbsp;|&nbsp; T_tight = T_slack × e^(μθ)<br/>
-          F_resultant = √(T_tight² + T_slack² − 2·T_tight·T_slack·cos(θ))<br/>
-          Torque = F_e × r
+          Carry side pulleys see T_tight on both sides &nbsp;|&nbsp; Return side pulleys see T_slack on both sides
         </Formulas>
       </div>
 
-      {/* ===== INERTIA & DYNAMICS ===== */}
+      {/* ===== PULLEY CONFIGURATION ===== */}
       <div style={{...cS,marginBottom:16,background:'rgba(34,197,94,0.04)',borderColor:'var(--accent2)'}}>
-        <Hdr>Rotational Inertia & Gearing</Hdr>
+        <Hdr>Pulley Configuration</Hdr>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+          <label style={{...lS,marginBottom:0}}>Number of Pulleys:</label>
+          <select value={pulleyCount} onChange={e=>handlePulleyCount(parseInt(e.target.value))} style={{
+            ...iS,width:'auto',padding:'6px 12px',
+          }}>
+            {Array.from({length:20},(_,i)=>i+1).map(n=><option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
+
+        {pulleys.map((p,i)=>(
+          <div key={i} style={{
+            background:p.isDrive?'rgba(34,197,94,0.06)':'var(--surface2)',
+            border:`1px solid ${p.isDrive?'var(--accent)':'var(--border)'}`,
+            borderRadius:8,padding:14,marginBottom:12,
+          }}>
+            {/* Pulley header row */}
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,flexWrap:'wrap'}}>
+              <input value={p.name} onChange={e=>updatePulley(i,'name',e.target.value)}
+                style={{...smallInput,width:150,fontWeight:700,fontSize:14,color:'var(--accent)'}}/>
+              <button onClick={()=>updatePulley(i,'isDrive',true)} style={{
+                padding:'5px 12px',borderRadius:5,border:`1px solid ${p.isDrive?'var(--accent)':'var(--border)'}`,
+                background:p.isDrive?'rgba(34,197,94,0.2)':'var(--surface)',
+                color:p.isDrive?'var(--accent)':'var(--muted)',fontWeight:600,fontSize:11,cursor:'pointer',textTransform:'uppercase',letterSpacing:0.5,
+              }}>{p.isDrive?'★ Drive':'Set as Drive'}</button>
+              {!p.isDrive&&(
+                <div style={{display:'flex',gap:4}}>
+                  {['carry','return'].map(s=>
+                    <button key={s} onClick={()=>updatePulley(i,'side',s)} style={{
+                      padding:'5px 10px',borderRadius:5,border:`1px solid ${p.side===s?'var(--accent)':'var(--border)'}`,
+                      background:p.side===s?'rgba(34,197,94,0.15)':'var(--surface)',
+                      color:p.side===s?'var(--accent)':'var(--muted)',fontWeight:600,fontSize:11,cursor:'pointer',textTransform:'uppercase',letterSpacing:0.5,
+                    }}>{s}</button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Pulley inputs grid */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))',gap:8}}>
+              <div>
+                <label style={{...lS,fontSize:10}}>Wrap Angle (deg)</label>
+                <input type="number" step="1" value={p.wrapAngleDeg} onChange={e=>updatePulley(i,'wrapAngleDeg',parseFloat(e.target.value)||0)} style={smallInput}/>
+              </div>
+              <div>
+                <label style={{...lS,fontSize:10}}>Radius (in)</label>
+                <input type="number" step="0.125" value={p.radius} onChange={e=>updatePulley(i,'radius',parseFloat(e.target.value)||0)} style={smallInput}/>
+              </div>
+              {p.isDrive&&(
+                <div>
+                  <label style={{...lS,fontSize:10}}>Friction Coeff.</label>
+                  <input type="number" step="0.01" value={p.frictionCoeff} onChange={e=>updatePulley(i,'frictionCoeff',parseFloat(e.target.value)||0)} style={smallInput}/>
+                </div>
+              )}
+              <div>
+                <label style={{...lS,fontSize:10}}>Shaft Dia. (in)</label>
+                <input type="number" step="0.125" value={p.shaftDiameter} onChange={e=>updatePulley(i,'shaftDiameter',parseFloat(e.target.value)||0)} style={smallInput}/>
+              </div>
+              <div>
+                <label style={{...lS,fontSize:10}}>Face Width (in)</label>
+                <input type="number" step="0.125" value={p.faceWidth} onChange={e=>updatePulley(i,'faceWidth',parseFloat(e.target.value)||0)} style={smallInput}/>
+              </div>
+              <div>
+                <label style={{...lS,fontSize:10}}>Hub Centers (in)</label>
+                <input type="number" step="0.125" value={p.hubCenters} onChange={e=>updatePulley(i,'hubCenters',parseFloat(e.target.value)||0)} style={smallInput}/>
+              </div>
+              <div>
+                <label style={{...lS,fontSize:10}}>Tube OD (in)</label>
+                <input type="number" step="0.125" value={p.tubeOD} onChange={e=>updatePulley(i,'tubeOD',parseFloat(e.target.value)||0)} style={smallInput}/>
+              </div>
+              <div>
+                <label style={{...lS,fontSize:10}}>Tube Wall (in)</label>
+                <input type="number" step="0.0625" value={p.tubeWall} onChange={e=>updatePulley(i,'tubeWall',parseFloat(e.target.value)||0)} style={smallInput}/>
+              </div>
+              <div>
+                <label style={{...lS,fontSize:10}}>Roller Mass (lbs)</label>
+                <input type="number" step="0.1" value={p.rollerMass} onChange={e=>updatePulley(i,'rollerMass',parseFloat(e.target.value)||0)} style={smallInput}/>
+              </div>
+              <div>
+                <label style={{...lS,fontSize:10}}>Roller Radius (in)</label>
+                <input type="number" step="0.125" value={p.rollerRadius} onChange={e=>updatePulley(i,'rollerRadius',parseFloat(e.target.value)||0)} style={smallInput}/>
+              </div>
+              <div>
+                <label style={{...lS,fontSize:10}}>Profile</label>
+                <div style={{display:'flex',gap:4}}>
+                  {[{id:false,label:'Drum'},{id:true,label:'V-Prof'}].map(m=>
+                    <button key={String(m.id)} onClick={()=>updatePulley(i,'isVProfile',m.id)} style={{
+                      flex:1,padding:'5px 0',borderRadius:4,border:`1px solid ${p.isVProfile===m.id?'var(--accent)':'var(--border)'}`,
+                      background:p.isVProfile===m.id?'rgba(34,197,94,0.15)':'var(--surface)',
+                      color:p.isVProfile===m.id?'var(--accent)':'var(--muted)',fontWeight:600,fontSize:10,cursor:'pointer',
+                    }}>{m.label}</button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ===== PER-PULLEY RESULTS ===== */}
+      {r.pulleyResults.map((pr,i)=>(
+        <div key={i} style={{
+          ...cS,marginBottom:16,
+          borderColor:pr.isDrive?'var(--accent)':'var(--border)',
+          background:pr.isDrive?'rgba(34,197,94,0.04)':'var(--surface)',
+        }}>
+          <Hdr color={pr.isDrive?'var(--accent)':'var(--accent2)'}>
+            {pr.name} — {pr.isDrive?'Drive':'Driven ('+pr.side+' side)'}
+          </Hdr>
+
+          {/* Forces & torque */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))',gap:10,marginBottom:12}}>
+            <Out label="Belt Tension (side 1)" value={pr.T1.toFixed(2)} unit="lbs"/>
+            <Out label="Belt Tension (side 2)" value={pr.T2.toFixed(2)} unit="lbs"/>
+            <Out label="Resultant Force" value={pr.resultant.toFixed(2)} unit="lbs" accent/>
+            {pr.isDrive&&<Out label="Drive Torque" value={pr.torque.toFixed(2)} unit="in·lbs" accent/>}
+          </div>
+
+          {/* PCI Shaft */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:10,marginBottom:12}}>
+            <StatusOut label="Max Load — Stress (Eq. 1)" value={pr.maxF_stress.toFixed(2)} unit="lbs" ok={pr.shaftStressOk}
+              statusText={pr.shaftStressOk?`✓ ${pr.resultant.toFixed(1)} < ${pr.maxF_stress.toFixed(1)} lbs`:`✗ ${pr.resultant.toFixed(1)} > ${pr.maxF_stress.toFixed(1)} lbs`}/>
+            <StatusOut label="Max Load — Deflection (Eq. 2)" value={pr.maxF_defl.toFixed(2)} unit="lbs" ok={pr.shaftDeflOk}
+              statusText={pr.shaftDeflOk?`✓ ${pr.resultant.toFixed(1)} < ${pr.maxF_defl.toFixed(1)} lbs`:`✗ ${pr.resultant.toFixed(1)} > ${pr.maxF_defl.toFixed(1)} lbs`}/>
+            <StatusOut label={`Governing (${pr.govBy})`} value={pr.maxF_gov.toFixed(2)} unit="lbs" ok={pr.shaftOk}
+              statusText={pr.shaftOk?`✓ Shaft adequate`:`✗ Shaft undersized`}/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))',gap:10,marginBottom:12}}>
+            <Out label="Shaft Bending Stress" value={pr.shaftStress.toFixed(1)} unit="psi" warn={pr.shaftStress>8000}/>
+            <Out label="Shaft Deflection" value={pr.shaftDefl.toFixed(6)} unit="in/in" warn={pr.shaftDefl>0.00232711}/>
+            <Out label="Bearing Centers" value={pr.bearingCenters.toFixed(3)} unit="in"/>
+          </div>
+
+          {/* PCI Tube */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))',gap:10}}>
+            <StatusOut label={`Tube Stress — ${pulleys[i].isVProfile?'V-Profile':'Standard'}`}
+              value={pr.tubeStress.toFixed(1)} unit="psi" ok={pr.tubeOk}
+              statusText={pr.tubeOk?`✓ ${pr.tubeStress.toFixed(1)} < ${pr.tubeLimit.toLocaleString()} psi`:`✗ ${pr.tubeStress.toFixed(1)} > ${pr.tubeLimit.toLocaleString()} psi`}/>
+            <Out label="Tube ID" value={pr.tubeID.toFixed(3)} unit="in"/>
+          </div>
+        </div>
+      ))}
+
+      {/* ===== INERTIA & GEARING ===== */}
+      <div style={{...cS,marginBottom:16,background:'rgba(34,197,94,0.04)',borderColor:'var(--accent2)'}}>
+        <Hdr>Rotational Inertia & Gearing (System Total)</Hdr>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:12,marginBottom:12}}>
-          <In label="Roller/Drum Mass" value={rollerMass} onChange={setRollerMass} step="0.1" unit="lbs" note="0 = ignore inertia"/>
-          <In label="Roller/Drum Radius" value={rollerRadius} onChange={setRollerRadius} step="0.125" unit="in"/>
           <In label="Motor RPM" value={motorRPM} onChange={setMotorRPM} step="1" unit="RPM"/>
         </div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:10}}>
-          <Out label="Roller Inertia (J)" value={r.J_roller.toFixed(6)} unit="slug·ft²"/>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))',gap:10}}>
+          <Out label="Total System Inertia (J)" value={r.J_total.toFixed(6)} unit="slug·ft²"/>
           <Out label="Angular Acceleration (α)" value={r.angularAccel.toFixed(2)} unit="rad/s²"/>
           <Out label="Inertial Torque (T=Jα)" value={r.inertialTorque.toFixed(4)} unit="ft·lbs"/>
           <Out label="Gear Ratio (motor/drive)" value={r.gearRatio.toFixed(2)} unit=":1"/>
           <Out label="Reflected Inertia to Motor" value={r.J_reflected.toFixed(8)} unit="slug·ft²"/>
         </div>
         <Formulas>
-          J = ½mr² &nbsp;|&nbsp; T = Jα &nbsp;|&nbsp; GR = Motor RPM / Drive RPM<br/>
-          J_reflected = J_load / GR²
+          J = Σ(½mr²) all pulleys &nbsp;|&nbsp; T = Jα &nbsp;|&nbsp; GR = Motor RPM / Drive RPM &nbsp;|&nbsp; J_reflected = J_total / GR²
         </Formulas>
       </div>
 
@@ -365,80 +522,13 @@ function App(){
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:12,marginBottom:12}}>
           <In label="Service Factor" value={serviceFactor} onChange={setServiceFactor} step="0.1" unit="×" note="Applied to calculated HP"/>
         </div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:10}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))',gap:10}}>
           <Out label="Total Cycle Time" value={r.tTotal.toFixed(1)} unit="sec"/>
           <Out label="Duty Cycle" value={(r.dutyCycle*100).toFixed(1)} unit="%"/>
           <Out label="RMS Torque" value={r.T_rms.toFixed(2)} unit="ft·lbs"/>
         </div>
         <Formulas>
-          DC = t_run / t_total &nbsp;|&nbsp;
-          T_RMS = √((T₁²t₁ + T₂²t₂ + T₃²t₃) / t_total)
-        </Formulas>
-      </div>
-
-      {/* ===== PCI SHAFT INPUTS ===== */}
-      <div style={{...cS,marginBottom:16,background:'rgba(34,197,94,0.04)',borderColor:'var(--accent2)'}}>
-        <Hdr>Shaft & Pulley Tube Inputs (PCI)</Hdr>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:12}}>
-          <In label="Shaft Diameter" value={shaftDiameter} onChange={setShaftDiameter} step="0.125" unit="in"/>
-          <In label="Pulley Face Width" value={faceWidth} onChange={setFaceWidth} step="0.125" unit="in" note="Belt riding surface width"/>
-          <In label="Hub Centers" value={hubCenters} onChange={setHubCenters} step="0.125" unit="in" note="Center-to-center of hubs"/>
-          <In label="Tube Outer Diameter" value={tubeOD} onChange={setTubeOD} step="0.125" unit="in"/>
-          <In label="Tube Wall Thickness" value={tubeWall} onChange={setTubeWall} step="0.0625" unit="in"/>
-          <div style={cS}>
-            <label style={lS}>Pulley Profile</label>
-            <div style={{display:'flex',gap:6}}>
-              {[{id:false,label:'Standard Drum'},{id:true,label:'V-Profile'}].map(m=>
-                <button key={String(m.id)} onClick={()=>setIsVProfile(m.id)} style={{
-                  flex:1,padding:'8px 0',borderRadius:5,border:`1px solid ${isVProfile===m.id?'var(--accent)':'var(--border)'}`,
-                  background:isVProfile===m.id?'rgba(34,197,94,0.15)':'var(--surface2)',
-                  color:isVProfile===m.id?'var(--accent)':'var(--muted)',fontWeight:600,fontSize:13,cursor:'pointer',
-                }}>{m.label}</button>)}
-            </div>
-            <div style={{fontSize:10,color:'var(--muted)',marginTop:4}}>Tube stress limit: {isVProfile?'3,400':'10,000'} psi</div>
-          </div>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:10,marginTop:12}}>
-          <Out label="Bearing Centers (computed)" value={r.bearingCenters.toFixed(3)} unit="in"/>
-          <Out label="Tube Inner Diameter (computed)" value={r.tubeID.toFixed(3)} unit="in"/>
-        </div>
-      </div>
-
-      {/* ===== PCI SHAFT ANALYSIS ===== */}
-      <div style={{...cS,marginBottom:16,borderColor:'var(--accent)'}}>
-        <Hdr color="var(--accent)">Shaft Analysis (PCI)</Hdr>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))',gap:12,marginBottom:12}}>
-          <StatusOut label="Max Load — Shaft Stress (Eq. 1)" value={r.maxF_stress.toFixed(2)} unit="lbs" ok={r.shaftStressOk}
-            statusText={r.shaftStressOk?`✓ Resultant (${r.resultant.toFixed(1)} lbs) < limit`:`✗ Resultant (${r.resultant.toFixed(1)} lbs) exceeds limit`}/>
-          <StatusOut label="Max Load — Shaft Deflection (Eq. 2)" value={r.maxF_defl.toFixed(2)} unit="lbs" ok={r.shaftDeflOk}
-            statusText={r.shaftDeflOk?`✓ Resultant (${r.resultant.toFixed(1)} lbs) < limit`:`✗ Resultant (${r.resultant.toFixed(1)} lbs) exceeds limit`}/>
-          <StatusOut label={`Governing Limit (${r.govBy})`} value={r.maxF_gov.toFixed(2)} unit="lbs" ok={r.shaftOk}
-            statusText={r.shaftOk?`✓ Shaft adequate — governed by ${r.govBy}`:`✗ Shaft undersized — governed by ${r.govBy}`}/>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:10}}>
-          <Out label="Actual Shaft Bending Stress" value={r.shaftStress.toFixed(1)} unit="psi" warn={r.shaftStress>8000}/>
-          <Out label="Actual Shaft Deflection" value={r.shaftDefl.toFixed(6)} unit="in/in" warn={r.shaftDefl>0.00232711}/>
-        </div>
-        <Formulas>
-          <strong style={{color:'var(--text)'}}>Eq 1:</strong> F = (1000·π·D³) / (FW + 4D − HC) &nbsp;|&nbsp; σ_max = 8,000 psi<br/>
-          <strong style={{color:'var(--text)'}}>Eq 2:</strong> F = (8435.77·π·D⁴) / ((FW + 4D − HC) × HC) &nbsp;|&nbsp; δ_max = 0.00232711 in/in<br/>
-          BearingCenters = FaceWidth + 4D
-        </Formulas>
-      </div>
-
-      {/* ===== PCI TUBE ANALYSIS ===== */}
-      <div style={{...cS,borderColor:'var(--accent)'}}>
-        <Hdr color="var(--accent)">Tube Analysis (PCI)</Hdr>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(250px, 1fr))',gap:12,marginBottom:12}}>
-          <StatusOut label={`Tube Stress (Eq. 3) — ${isVProfile?'V-Profile':'Standard Drum'}`}
-            value={r.tubeStress.toFixed(1)} unit="psi" ok={r.tubeOk}
-            statusText={r.tubeOk?`✓ ${r.tubeStress.toFixed(1)} psi < ${r.tubeLimit.toLocaleString()} psi limit`:`✗ ${r.tubeStress.toFixed(1)} psi exceeds ${r.tubeLimit.toLocaleString()} psi limit`}/>
-          <Out label={`Using F from ${r.govBy} (Eq. ${r.govBy==='stress'?'1':'2'})`} value={r.maxF_gov.toFixed(2)} unit="lbs"/>
-        </div>
-        <Formulas>
-          <strong style={{color:'var(--text)'}}>Eq 3:</strong> σ = (OD/2 × F × HC) / (4 × I_tube)<br/>
-          I_tube = π·(OD⁴ − ID⁴)/64 &nbsp;|&nbsp; ID = OD − 2·Wall<br/>
-          Limit: {isVProfile?'3,400':'10,000'} psi &nbsp;|&nbsp; F = min(Eq1, Eq2) = {r.maxF_gov.toFixed(2)} lbs
+          DC = t_run / t_total &nbsp;|&nbsp; T_RMS = √((T₁²t₁ + T₂²t₂ + T₃²t₃) / t_total)
         </Formulas>
       </div>
 
