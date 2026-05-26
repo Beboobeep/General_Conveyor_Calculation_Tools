@@ -123,8 +123,12 @@ function exportToExcel(r,pulleys,inputs){
   summary.push(['Acceleration Force (F_a)','',r.F_a.toFixed(2),'lbs','(W × V/60) / (g × t)']);
   summary.push(['Special Loads (F_s)','',r.F_s.toFixed(2),'lbs','User input']);
   summary.push(['Effective Pull (F_e)','OUTPUT',r.F_e.toFixed(2),'lbs','F_f + F_a + F_g + F_s']);
-  summary.push(['Calculated HP','OUTPUT',r.hp.toFixed(4),'HP','(F_e × V) / 33,000']);
-  summary.push(['Design HP (w/ SF)','OUTPUT',r.hpDesign.toFixed(4),'HP','HP × Service Factor']);
+  summary.push(['Calculated HP (at belt)','OUTPUT',r.hp.toFixed(4),'HP','(F_e × V) / 33,000']);
+  summary.push(['Drivetrain Efficiency','INPUT',inputs.drivetrainEfficiency,'decimal','']);
+  summary.push(['Motor HP','OUTPUT',r.motorHP.toFixed(4),'HP','HP_belt / Efficiency']);
+  summary.push(['Design HP (w/ SF)','OUTPUT',r.motorHPdesign.toFixed(4),'HP','Motor HP × Service Factor']);
+  summary.push(['Drive Pulley Torque','OUTPUT',r.drivePulleyTorque_ftlbs.toFixed(4),'ft·lbs','F_e × r / 12']);
+  summary.push(['Motor Torque','OUTPUT',r.motorTorque.toFixed(4),'ft·lbs','Pulley Torque / GR']);
   summary.push([]);
 
   const dp=pulleys.find(p=>p.isDrive)||pulleys[0];
@@ -140,18 +144,25 @@ function exportToExcel(r,pulleys,inputs){
   summary.push(['=== INERTIA & GEARING ===','','Value','Unit','Equation']);
   summary.push(['Total System Inertia (J)','OUTPUT',r.J_total.toFixed(6),'slug·ft²','Σ(½mr²) all pulleys']);
   summary.push(['Angular Acceleration (α)','OUTPUT',r.angularAccel.toFixed(2),'rad/s²','(V/r)/t']);
-  summary.push(['Inertial Torque','OUTPUT',r.inertialTorque.toFixed(4),'ft·lbs','T = Jα']);
+  summary.push(['Inertial Torque (at load)','OUTPUT',r.inertialTorque.toFixed(4),'ft·lbs','T = Jα']);
+  summary.push(['Inertial Torque (at motor)','OUTPUT',r.inertialTorqueMotor.toFixed(4),'ft·lbs','(Jα) / GR']);
   summary.push(['Gear Ratio','OUTPUT',r.gearRatio.toFixed(2),':1','Motor RPM / Drive RPM']);
   summary.push(['Reflected Inertia','OUTPUT',r.J_reflected.toFixed(8),'slug·ft²','J_total / GR²']);
   summary.push([]);
 
   summary.push(['=== DUTY CYCLE ===','','Value','Unit','Equation']);
-  summary.push(['Start Torque','INPUT',inputs.startTorque,'ft·lbs','']);
+  summary.push(['Suggested Start Torque','CALC',r.suggestedStartTorque.toFixed(4),'ft·lbs','Motor Torque + Inertial Torque (motor)']);
+  summary.push(['Suggested Run Torque','CALC',r.suggestedRunTorque.toFixed(4),'ft·lbs','Motor Torque (steady state)']);
+  summary.push(['Suggested Stop Torque','CALC',r.suggestedStopTorque.toFixed(4),'ft·lbs','Inertial Torque (motor)']);
+  summary.push(['Start Torque Override','INPUT',inputs.startTorque,'ft·lbs','0 = use suggested']);
   summary.push(['Start Duration','INPUT',inputs.startTime,'sec','']);
-  summary.push(['Run Torque','INPUT',inputs.runTorque,'ft·lbs','']);
+  summary.push(['Run Torque Override','INPUT',inputs.runTorque,'ft·lbs','0 = use suggested']);
   summary.push(['Run Duration','INPUT',inputs.runTime,'sec','']);
-  summary.push(['Stop Torque','INPUT',inputs.stopTorque,'ft·lbs','']);
+  summary.push(['Stop Torque Override','INPUT',inputs.stopTorque,'ft·lbs','0 = use suggested']);
   summary.push(['Stop Duration','INPUT',inputs.stopTime,'sec','']);
+  summary.push(['Start Torque (used in RMS)','OUTPUT',r.useStartT.toFixed(4),'ft·lbs','Override or suggested']);
+  summary.push(['Run Torque (used in RMS)','OUTPUT',r.useRunT.toFixed(4),'ft·lbs','Override or suggested']);
+  summary.push(['Stop Torque (used in RMS)','OUTPUT',r.useStopT.toFixed(4),'ft·lbs','Override or suggested']);
   summary.push(['Total Cycle Time','OUTPUT',r.tTotal.toFixed(1),'sec','t_start + t_run + t_stop']);
   summary.push(['Duty Cycle','OUTPUT',(r.dutyCycle*100).toFixed(1),'%','t_run / t_total']);
   summary.push(['RMS Torque','OUTPUT',r.T_rms.toFixed(2),'ft·lbs','√(Σ(T²t) / t_total)']);
@@ -244,6 +255,7 @@ function App(){
   const[stopTime,setStopTime]=useState(0);
   const[serviceFactor,setServiceFactor]=useState(1.5);
   const[motorRPM,setMotorRPM]=useState(1750);
+  const[drivetrainEfficiency,setDrivetrainEfficiency]=useState(0.90);
 
   // Pulleys
   const[pulleyCount,setPulleyCount]=useState(2);
@@ -364,24 +376,47 @@ function App(){
     // Total inertia & reflected
     const J_total=pulleyResults.reduce((s,pr)=>s+pr.J,0);
     const angularAccel=accelTime>0?((speed/60)/(drivePulley.radius/12))/accelTime:0;
-    const inertialTorque=J_total*angularAccel;
+    const inertialTorque=J_total*angularAccel; // ft·lbs
+
     const gearRatio=computedRPM>0?motorRPM/computedRPM:1;
     const J_reflected=gearRatio>0?J_total/(gearRatio*gearRatio):0;
 
-    // Duty cycle
+    // === MOTOR-SIDE TORQUE ===
+    // Drive pulley torque is in in·lbs, convert to ft·lbs for motor side
+    const drivePulleyTorque_ftlbs=(F_e*drivePulley.radius)/12;
+    const motorTorque=gearRatio>0?drivePulleyTorque_ftlbs/gearRatio:0;
+
+    // === MOTOR HP (accounting for drivetrain efficiency) ===
+    const motorHP=drivetrainEfficiency>0?hp/drivetrainEfficiency:Infinity;
+    const motorHPdesign=motorHP*serviceFactor;
+
+    // === SUGGESTED PHASE TORQUES ===
+    // Start: steady-state motor torque + inertial torque reflected to motor
+    const inertialTorqueMotor=gearRatio>0?inertialTorque/gearRatio:0;
+    const suggestedStartTorque=motorTorque+inertialTorqueMotor;
+    const suggestedRunTorque=motorTorque;
+    const suggestedStopTorque=inertialTorqueMotor; // decel torque only
+
+    // Duty cycle — use user-entered values if non-zero, otherwise suggested
+    const useStartT=startTorque>0?startTorque:suggestedStartTorque;
+    const useRunT=runTorque>0?runTorque:suggestedRunTorque;
+    const useStopT=stopTorque>0?stopTorque:suggestedStopTorque;
+
     const tTotal=startTime+runTime+stopTime;
     const dutyCycle=tTotal>0?runTime/tTotal:0;
-    const rmsNum=startTorque*startTorque*startTime+runTorque*runTorque*runTime+stopTorque*stopTorque*stopTime;
+    const rmsNum=useStartT*useStartT*startTime+useRunT*useRunT*runTime+useStopT*useStopT*stopTime;
     const T_rms=tTotal>0?Math.sqrt(rmsNum/tTotal):0;
 
     return{speed,computedRPM,beltArea:beltLength*beltWidth,beltWeight,totalWeight,
-      F_f,F_g,F_a,F_s,F_e,hp,hpDesign,
+      F_f,F_g,F_a,F_s,F_e,hp,hpDesign,motorHP,motorHPdesign,
       driveWrapRad,capRatio,slackSide,tightSide,
+      drivePulleyTorque_ftlbs,motorTorque,inertialTorqueMotor,
+      suggestedStartTorque,suggestedRunTorque,suggestedStopTorque,
       pulleyResults,J_total,angularAccel,inertialTorque,gearRatio,J_reflected,
-      tTotal,dutyCycle,T_rms};
+      tTotal,dutyCycle,T_rms,useStartT,useRunT,useStopT};
   },[speedMode,conveyorSpeed,drivePulleyDiameter,drivePulleyRPM,beltLength,beltWidth,beltWeightPerSqIn,
     bedFriction,maxLoad,conveyorLength,inclineAngle,specialLoads,accelTime,
-    pulleys,startTorque,startTime,runTorque,runTime,stopTorque,stopTime,serviceFactor,motorRPM]);
+    pulleys,startTorque,startTime,runTorque,runTime,stopTorque,stopTime,serviceFactor,motorRPM,drivetrainEfficiency]);
 
   const r=results;
 
@@ -397,7 +432,7 @@ function App(){
           </div>
           <button onClick={()=>exportToExcel(r,pulleys,{speedMode,conveyorSpeed,drivePulleyDiameter,drivePulleyRPM,
             beltLength,beltWidth,beltWeightPerSqIn,bedFriction,maxLoad,conveyorLength,inclineAngle,specialLoads,accelTime,
-            serviceFactor,motorRPM,startTorque,startTime,runTorque,runTime,stopTorque,stopTime})} style={{
+            serviceFactor,motorRPM,drivetrainEfficiency,startTorque,startTime,runTorque,runTime,stopTorque,stopTime})} style={{
             padding:'10px 20px',borderRadius:6,border:'1px solid var(--accent)',
             background:'rgba(34,197,94,0.15)',color:'var(--accent)',fontWeight:700,fontSize:13,cursor:'pointer',
             letterSpacing:0.5,
@@ -460,13 +495,19 @@ function App(){
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:12}}>
           <Out label="Effective Pull (F_e)" value={r.F_e.toFixed(2)} unit="lbs" accent/>
-          <Out label="Calculated HP" value={r.hp.toFixed(4)} unit="HP" accent/>
-          <Out label="Design HP (w/ SF)" value={r.hpDesign.toFixed(4)} unit="HP" accent/>
+          <Out label="Calculated HP (at belt)" value={r.hp.toFixed(4)} unit="HP"/>
+          <Out label="Motor HP (w/ efficiency)" value={r.motorHP.toFixed(4)} unit="HP" accent/>
+          <Out label="Design HP (w/ SF)" value={r.motorHPdesign.toFixed(4)} unit="HP" accent/>
+          <Out label="Drive Pulley Torque" value={r.drivePulleyTorque_ftlbs.toFixed(4)} unit="ft·lbs"/>
+          <Out label="Motor Torque (thru gear)" value={r.motorTorque.toFixed(4)} unit="ft·lbs" accent/>
         </div>
         <Formulas>
           <strong style={{color:'var(--text)'}}>F_e</strong> = F_f + F_a + F_g + F_s &nbsp;|&nbsp;
-          <strong style={{color:'var(--text)'}}>HP</strong> = (F_e × V) / 33,000 &nbsp;|&nbsp;
-          <strong style={{color:'var(--text)'}}>HP_design</strong> = HP × SF
+          <strong style={{color:'var(--text)'}}>HP_belt</strong> = (F_e × V) / 33,000<br/>
+          <strong style={{color:'var(--text)'}}>HP_motor</strong> = HP_belt / Efficiency &nbsp;|&nbsp;
+          <strong style={{color:'var(--text)'}}>HP_design</strong> = HP_motor × SF<br/>
+          <strong style={{color:'var(--text)'}}>T_pulley</strong> = F_e × r &nbsp;|&nbsp;
+          <strong style={{color:'var(--text)'}}>T_motor</strong> = T_pulley / GR
         </Formulas>
       </div>
 
@@ -631,11 +672,13 @@ function App(){
         <Hdr>Rotational Inertia & Gearing (System Total)</Hdr>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:12,marginBottom:12}}>
           <In label="Motor RPM" value={motorRPM} onChange={setMotorRPM} step="1" unit="RPM"/>
+          <In label="Drivetrain Efficiency" value={drivetrainEfficiency} onChange={setDrivetrainEfficiency} step="0.01" unit="decimal" note="0.85–0.95 typical (belt, chain, gear losses)"/>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))',gap:10}}>
           <Out label="Total System Inertia (J)" value={r.J_total.toFixed(6)} unit="slug·ft²"/>
           <Out label="Angular Acceleration (α)" value={r.angularAccel.toFixed(2)} unit="rad/s²"/>
-          <Out label="Inertial Torque (T=Jα)" value={r.inertialTorque.toFixed(4)} unit="ft·lbs"/>
+          <Out label="Inertial Torque (at load)" value={r.inertialTorque.toFixed(4)} unit="ft·lbs"/>
+          <Out label="Inertial Torque (at motor)" value={r.inertialTorqueMotor.toFixed(4)} unit="ft·lbs" accent/>
           <Out label="Gear Ratio (motor/drive)" value={r.gearRatio.toFixed(2)} unit=":1"/>
           <Out label="Reflected Inertia to Motor" value={r.J_reflected.toFixed(8)} unit="slug·ft²"/>
         </div>
@@ -650,29 +693,48 @@ function App(){
         <div style={{display:'grid',gridTemplateColumns:'repeat(3, 1fr)',gap:12,marginBottom:12}}>
           <div>
             <div style={{fontSize:10,color:'var(--muted)',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8,fontWeight:600}}>Start Phase</div>
-            <In label="Torque" value={startTorque} onChange={setStartTorque} step="0.1" unit="ft·lbs"/>
+            <In label="Torque Override" value={startTorque} onChange={setStartTorque} step="0.1" unit="ft·lbs" note="0 = use suggested"/>
             <div style={{marginTop:8}}><In label="Duration" value={startTime} onChange={setStartTime} step="0.1" unit="sec"/></div>
           </div>
           <div>
             <div style={{fontSize:10,color:'var(--muted)',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8,fontWeight:600}}>Run Phase</div>
-            <In label="Torque" value={runTorque} onChange={setRunTorque} step="0.1" unit="ft·lbs"/>
+            <In label="Torque Override" value={runTorque} onChange={setRunTorque} step="0.1" unit="ft·lbs" note="0 = use suggested"/>
             <div style={{marginTop:8}}><In label="Duration" value={runTime} onChange={setRunTime} step="0.1" unit="sec"/></div>
           </div>
           <div>
             <div style={{fontSize:10,color:'var(--muted)',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8,fontWeight:600}}>Stop Phase</div>
-            <In label="Torque" value={stopTorque} onChange={setStopTorque} step="0.1" unit="ft·lbs"/>
+            <In label="Torque Override" value={stopTorque} onChange={setStopTorque} step="0.1" unit="ft·lbs" note="0 = use suggested"/>
             <div style={{marginTop:8}}><In label="Duration" value={stopTime} onChange={setStopTime} step="0.1" unit="sec"/></div>
           </div>
         </div>
+
+        {/* Suggested torques */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3, 1fr)',gap:12,marginBottom:12}}>
+          <Out label="Suggested Start Torque" value={r.suggestedStartTorque.toFixed(4)} unit="ft·lbs" accent/>
+          <Out label="Suggested Run Torque" value={r.suggestedRunTorque.toFixed(4)} unit="ft·lbs" accent/>
+          <Out label="Suggested Stop Torque" value={r.suggestedStopTorque.toFixed(4)} unit="ft·lbs" accent/>
+        </div>
+        <div style={{marginBottom:12,padding:8,background:'var(--surface2)',borderRadius:6,fontSize:10,color:'var(--muted)',lineHeight:1.5}}>
+          Suggested start = motor torque + inertial torque at motor. Suggested run = motor torque (steady state). Suggested stop = inertial torque at motor (decel only).
+          Set override to 0 to use suggested values in RMS calculation. Non-zero overrides replace the suggested value.
+        </div>
+
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:12,marginBottom:12}}>
-          <In label="Service Factor" value={serviceFactor} onChange={setServiceFactor} step="0.1" unit="×" note="Applied to calculated HP"/>
+          <In label="Service Factor" value={serviceFactor} onChange={setServiceFactor} step="0.1" unit="×" note="Applied to motor HP"/>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))',gap:10,marginBottom:8}}>
+          <Out label="RMS Start Torque (used)" value={r.useStartT.toFixed(4)} unit="ft·lbs"/>
+          <Out label="RMS Run Torque (used)" value={r.useRunT.toFixed(4)} unit="ft·lbs"/>
+          <Out label="RMS Stop Torque (used)" value={r.useStopT.toFixed(4)} unit="ft·lbs"/>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))',gap:10}}>
           <Out label="Total Cycle Time" value={r.tTotal.toFixed(1)} unit="sec"/>
           <Out label="Duty Cycle" value={(r.dutyCycle*100).toFixed(1)} unit="%"/>
-          <Out label="RMS Torque" value={r.T_rms.toFixed(2)} unit="ft·lbs"/>
+          <Out label="RMS Torque" value={r.T_rms.toFixed(4)} unit="ft·lbs" accent/>
         </div>
         <Formulas>
+          T_start = T_motor + T_inertial_motor &nbsp;|&nbsp; T_run = T_motor &nbsp;|&nbsp; T_stop = T_inertial_motor<br/>
+          T_motor = T_pulley / GR &nbsp;|&nbsp; T_inertial_motor = (J×α) / GR<br/>
           DC = t_run / t_total &nbsp;|&nbsp; T_RMS = √((T₁²t₁ + T₂²t₂ + T₃²t₃) / t_total)
         </Formulas>
       </div>
