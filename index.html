@@ -93,7 +93,7 @@ function exportToExcel(r,pulleys,inputs){
   summary.push(['Conveyor Speed','',r.speed.toFixed(2),'FPM']);
   summary.push(['Drive Roller RPM','',r.computedRPM.toFixed(2),'RPM']);
   if(inputs.speedMode==='rpm'){
-    summary.push(['Drive Pulley Diameter','',inputs.drivePulleyDiameter,'in']);
+    summary.push(['Drive Pulley Diameter (from config)','',dp.radius*2,'in']);
     summary.push(['Pulley RPM (input)','',inputs.drivePulleyRPM,'RPM']);
   }
   summary.push(['Total Belt Length','',inputs.beltLength,'in']);
@@ -232,7 +232,6 @@ function App(){
   // Speed
   const[speedMode,setSpeedMode]=useState('direct');
   const[conveyorSpeed,setConveyorSpeed]=useState(100);
-  const[drivePulleyDiameter,setDrivePulleyDiameter]=useState(3.0);
   const[drivePulleyRPM,setDrivePulleyRPM]=useState(127.3);
 
   // Belt & load
@@ -292,10 +291,11 @@ function App(){
 
   const results=useMemo(()=>{
     // === BELT SPEED ===
+    const driveDiameter = drivePulley.radius * 2;
     let speed;
-    if(speedMode==='rpm') speed=(PI*drivePulleyDiameter*drivePulleyRPM)/12;
+    if(speedMode==='rpm') speed=(PI*driveDiameter*drivePulleyRPM)/12;
     else speed=conveyorSpeed;
-    const computedRPM=speedMode==='direct'?(conveyorSpeed*12)/(PI*drivePulleyDiameter):drivePulleyRPM;
+    const computedRPM=speedMode==='direct'?(conveyorSpeed*12)/(PI*driveDiameter):drivePulleyRPM;
 
     // === WEIGHTS ===
     const beltArea=beltLength*beltWidth;
@@ -414,7 +414,7 @@ function App(){
       suggestedStartTorque,suggestedRunTorque,suggestedStopTorque,
       pulleyResults,J_total,angularAccel,inertialTorque,gearRatio,J_reflected,
       tTotal,dutyCycle,T_rms,useStartT,useRunT,useStopT};
-  },[speedMode,conveyorSpeed,drivePulleyDiameter,drivePulleyRPM,beltLength,beltWidth,beltWeightPerSqIn,
+  },[speedMode,conveyorSpeed,drivePulleyRPM,beltLength,beltWidth,beltWeightPerSqIn,
     bedFriction,maxLoad,conveyorLength,inclineAngle,specialLoads,accelTime,
     pulleys,startTorque,startTime,runTorque,runTime,stopTorque,stopTime,serviceFactor,motorRPM,drivetrainEfficiency]);
 
@@ -430,7 +430,7 @@ function App(){
             <h1 style={{margin:0,fontSize:22,fontWeight:700,letterSpacing:-0.5,color:'var(--accent)'}}>Belt Drive Calculator</h1>
             <p style={{margin:'4px 0 0',fontSize:13,color:'var(--muted)'}}>Multi-pulley conveyor system analysis — belt tension, HP, capstan, inertia, duty cycle, PCI shaft/tube</p>
           </div>
-          <button onClick={()=>exportToExcel(r,pulleys,{speedMode,conveyorSpeed,drivePulleyDiameter,drivePulleyRPM,
+          <button onClick={()=>exportToExcel(r,pulleys,{speedMode,conveyorSpeed,drivePulleyRPM,
             beltLength,beltWidth,beltWeightPerSqIn,bedFriction,maxLoad,conveyorLength,inclineAngle,specialLoads,accelTime,
             serviceFactor,motorRPM,drivetrainEfficiency,startTorque,startTime,runTorque,runTime,stopTorque,stopTime})} style={{
             padding:'10px 20px',borderRadius:6,border:'1px solid var(--accent)',
@@ -455,8 +455,8 @@ function App(){
           {speedMode==='direct'?(
             <In label="Conveyor Speed" value={conveyorSpeed} onChange={setConveyorSpeed} step="1" unit="FPM"/>
           ):(<>
-            <In label="Drive Pulley Diameter" value={drivePulleyDiameter} onChange={setDrivePulleyDiameter} step="0.125" unit="in"/>
             <In label="Pulley RPM" value={drivePulleyRPM} onChange={setDrivePulleyRPM} step="1" unit="RPM"/>
+            <Out label="Drive Pulley Diameter (from pulley config)" value={(drivePulley.radius*2).toFixed(3)} unit="in"/>
           </>)}
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:10,marginTop:12}}>
