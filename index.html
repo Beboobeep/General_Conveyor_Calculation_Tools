@@ -200,7 +200,7 @@ function importFromExcel(file,setters){
           // Name is before the first " — "
           const dashIdx=header.indexOf(' — ');
           if(dashIdx>0) p.name=header.substring(0,dashIdx);
-          if(header.includes('DRIVE')) p.isDrive=true; else p.isDrive=false;
+          if(header.includes('DRIVE')&&!header.includes('DRIVEN')) p.isDrive=true; else p.isDrive=false;
           if(header.includes('ROLLER')) p.pulleyType='roller';
           else if(header.includes('DRUM')) p.pulleyType='drum';
           if(header.includes('carry')) p.side='carry';
