@@ -129,6 +129,118 @@ function calcRoller(p,resultant){
     spanLabel:'Mount Span (bearing ctrs)',spanValue:L};
 }
 
+function parseExcelValue(sheets,sheetName,label){
+  const ws=sheets[sheetName];
+  if(!ws) return undefined;
+  const data=XLSX.utils.sheet_to_json(ws,{header:1});
+  for(const row of data){
+    if(row&&row[0]&&String(row[0]).trim()===label) return row[2];
+  }
+  return undefined;
+}
+
+function importFromExcel(file,setters){
+  const reader=new FileReader();
+  reader.onload=(e)=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const sheets={};
+      wb.SheetNames.forEach(n=>{sheets[n]=wb.Sheets[n];});
+      const summaryName=wb.SheetNames[0]; // Summary is always first sheet
+
+      // Helper to get value from summary
+      const sv=(label)=>parseExcelValue(sheets,summaryName,label);
+
+      // System inputs from Summary sheet
+      const mode=sv('Belt Speed Mode');
+      if(mode) setters.setSpeedMode(mode==='Direct FPM'?'direct':'rpm');
+
+      const v=sv('Conveyor Speed'); if(v!=null) setters.setConveyorSpeed(Number(v)||100);
+      const rpm=sv('Pulley RPM (input)'); if(rpm!=null) setters.setDrivePulleyRPM(Number(rpm)||127.3);
+      const bl=sv('Total Belt Length'); if(bl!=null) setters.setBeltLength(Number(bl)||25);
+      const bw=sv('Belt Width'); if(bw!=null) setters.setBeltWidth(Number(bw)||4);
+
+      // Belt Weight appears twice (input and output), match the one under INPUTS
+      const data=XLSX.utils.sheet_to_json(sheets[summaryName],{header:1});
+      let inInputSection=false;
+      for(const row of data){
+        if(row&&row[0]&&String(row[0]).includes('=== INPUTS ===')) inInputSection=true;
+        if(row&&row[0]&&String(row[0]).includes('===')&&!String(row[0]).includes('INPUTS')) inInputSection=false;
+        if(inInputSection&&row&&String(row[0]).trim()==='Belt Weight') {setters.setBeltWeightPerSqIn(Number(row[2])||0.01);break;}
+      }
+
+      const bf=sv('Bed Friction Coefficient'); if(bf!=null) setters.setBedFriction(Number(bf)||0.3);
+      const ml=sv('Max Load Carried'); if(ml!=null) setters.setMaxLoad(Number(ml)||50);
+      const cl=sv('Conveyor Length'); if(cl!=null) setters.setConveyorLength(Number(cl)||10);
+      const ia=sv('Incline Angle'); if(ia!=null) setters.setInclineAngle(Number(ia)||0);
+      const sl=sv('Special Loads'); if(sl!=null) setters.setSpecialLoads(Number(sl)||0);
+      const at=sv('Acceleration Time'); if(at!=null) setters.setAccelTime(Number(at)||0);
+      const sf=sv('Service Factor'); if(sf!=null) setters.setServiceFactor(Number(sf)||1.5);
+      const mr=sv('Motor RPM'); if(mr!=null) setters.setMotorRPM(Number(mr)||1750);
+      const de=sv('Drivetrain Efficiency'); if(de!=null) setters.setDrivetrainEfficiency(Number(de)||0.9);
+
+      // Duty cycle — scan for start/run/stop overrides
+      const stov=sv('Start Torque Override')||sv('Start T (used)'); if(stov!=null) setters.setStartTorque(Number(stov)||0);
+      const sdur=sv('Start Duration'); if(sdur!=null) setters.setStartTime(Number(sdur)||0);
+      const rtov=sv('Run Torque Override')||sv('Run T (used)'); if(rtov!=null) setters.setRunTorque(Number(rtov)||0);
+      const rdur=sv('Run Duration'); if(rdur!=null) setters.setRunTime(Number(rdur)||0);
+      const stop=sv('Stop Torque Override')||sv('Stop T (used)'); if(stop!=null) setters.setStopTorque(Number(stop)||0);
+      const stopdur=sv('Stop Duration'); if(stopdur!=null) setters.setStopTime(Number(stopdur)||0);
+
+      // Pulleys — every sheet after Summary is a pulley
+      const pulleySheets=wb.SheetNames.slice(1);
+      const importedPulleys=pulleySheets.map((sn,idx)=>{
+        const pv=(label)=>parseExcelValue(sheets,sn,label);
+        const p=defaultPulley(idx);
+
+        // Parse header for name and type
+        const pData=XLSX.utils.sheet_to_json(sheets[sn],{header:1});
+        if(pData[0]&&pData[0][0]){
+          const header=String(pData[0][0]);
+          // Name is before the first " — "
+          const dashIdx=header.indexOf(' — ');
+          if(dashIdx>0) p.name=header.substring(0,dashIdx);
+          if(header.includes('DRIVE')) p.isDrive=true; else p.isDrive=false;
+          if(header.includes('ROLLER')) p.pulleyType='roller';
+          else if(header.includes('DRUM')) p.pulleyType='drum';
+          if(header.includes('carry')) p.side='carry';
+          if(header.includes('return')) p.side='return';
+        }
+
+        const tp=pv('Type'); if(tp) p.pulleyType=tp.toLowerCase();
+        const rl=pv('Role'); if(rl==='Drive') p.isDrive=true;
+        const sd=pv('Side'); if(sd) p.side=sd.toLowerCase();
+        const wa=pv('Wrap Angle'); if(wa!=null) p.wrapAngleDeg=Number(wa)||180;
+        const rd=pv('Radius'); if(rd!=null) p.radius=Number(rd)||1.5;
+        const fc=pv('Friction Coeff.'); if(fc!=null) p.frictionCoeff=Number(fc)||0.35;
+        const shd=pv('Shaft Diameter'); if(shd!=null) p.shaftDiameter=Number(shd)||1.0;
+        const fw=pv('Face Width'); if(fw!=null) p.faceWidth=Number(fw)||2.0;
+        const hc=pv('Hub Centers'); if(hc!=null) p.hubCenters=Number(hc)||3.0;
+        const bo=pv('Boss Overhang'); if(bo!=null) p.bossOverhang=Number(bo)||0.125;
+        const tod=pv('Tube OD'); if(tod!=null) p.tubeOD=Number(tod)||4.0;
+        const tw=pv('Tube Wall'); if(tw!=null) p.tubeWall=Number(tw)||0.25;
+        const pr=pv('Profile'); if(pr) p.isVProfile=pr==='V-Profile';
+        const pm=pv('Pulley Mass'); if(pm!=null) p.pulleyMass=Number(pm)||0;
+
+        return p;
+      });
+
+      if(importedPulleys.length>0){
+        // Ensure exactly one drive
+        if(!importedPulleys.some(p=>p.isDrive)) importedPulleys[0].isDrive=true;
+        setters.setPulleyCount(importedPulleys.length);
+        setters.setPulleys(importedPulleys);
+      }
+
+      alert('Import successful — '+importedPulleys.length+' pulleys loaded.');
+    }catch(err){
+      alert('Import failed: '+err.message);
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
 function exportToExcel(r,pulleys,inputs){
   const wb=XLSX.utils.book_new();
   const summary=[];
@@ -379,12 +491,29 @@ function App(){
             <h1 style={{margin:0,fontSize:22,fontWeight:700,letterSpacing:-0.5,color:'var(--accent)'}}>Belt Drive Calculator</h1>
             <p style={{margin:'4px 0 0',fontSize:13,color:'var(--muted)'}}>Multi-pulley conveyor system analysis — drum & roller support</p>
           </div>
-          <button onClick={()=>exportToExcel(r,pulleys,{speedMode,conveyorSpeed,drivePulleyRPM,
-            beltLength,beltWidth,beltWeightPerSqIn,bedFriction,maxLoad,conveyorLength,inclineAngle,specialLoads,accelTime,
-            serviceFactor,motorRPM,drivetrainEfficiency,startTorque,startTime,runTorque,runTime,stopTorque,stopTime})} style={{
-            padding:'10px 20px',borderRadius:6,border:'1px solid var(--accent)',
-            background:'rgba(34,197,94,0.15)',color:'var(--accent)',fontWeight:700,fontSize:13,cursor:'pointer',letterSpacing:0.5,
-          }}>Export to Excel</button>
+          <div style={{display:'flex',gap:8}}>
+            <label style={{
+              padding:'10px 20px',borderRadius:6,border:'1px solid var(--accent2)',
+              background:'rgba(74,222,128,0.08)',color:'var(--accent2)',fontWeight:700,fontSize:13,cursor:'pointer',letterSpacing:0.5,
+            }}>Import Excel
+              <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={(e)=>{
+                if(e.target.files[0]) importFromExcel(e.target.files[0],{
+                  setSpeedMode,setConveyorSpeed,setDrivePulleyRPM,
+                  setBeltLength,setBeltWidth,setBeltWeightPerSqIn,setBedFriction,setMaxLoad,setConveyorLength,
+                  setInclineAngle,setSpecialLoads,setAccelTime,setServiceFactor,setMotorRPM,setDrivetrainEfficiency,
+                  setStartTorque,setStartTime,setRunTorque,setRunTime,setStopTorque,setStopTime,
+                  setPulleyCount,setPulleys,
+                });
+                e.target.value='';
+              }}/>
+            </label>
+            <button onClick={()=>exportToExcel(r,pulleys,{speedMode,conveyorSpeed,drivePulleyRPM,
+              beltLength,beltWidth,beltWeightPerSqIn,bedFriction,maxLoad,conveyorLength,inclineAngle,specialLoads,accelTime,
+              serviceFactor,motorRPM,drivetrainEfficiency,startTorque,startTime,runTorque,runTime,stopTorque,stopTime})} style={{
+              padding:'10px 20px',borderRadius:6,border:'1px solid var(--accent)',
+              background:'rgba(34,197,94,0.15)',color:'var(--accent)',fontWeight:700,fontSize:13,cursor:'pointer',letterSpacing:0.5,
+            }}>Export to Excel</button>
+          </div>
         </div>
       </div>
 
